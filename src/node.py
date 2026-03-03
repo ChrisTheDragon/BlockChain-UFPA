@@ -6,9 +6,10 @@ import socket
 import struct
 from threading import Thread
 from typing import Any
+import uuid
 
 from .blockchain import Blockchain
-from .models import Block, Transaction, utc_now_iso
+from .models import Block, Transaction, current_timestamp
 
 
 @dataclass
@@ -24,7 +25,8 @@ class PeerMessage:
             "payload": self.payload,
             "sender": self.sender,
         }
-        json_data = json.dumps(message, separators=(",", ":")).encode("utf-8")
+        # Removido separators compactos para manter o JSON padrão
+        json_data = json.dumps(message).encode("utf-8")
         size = struct.pack(">I", len(json_data))
         return size + json_data
 
@@ -206,11 +208,11 @@ class Node:
 
     def create_transaction(self, destination: str, value: float) -> tuple[bool, str | Transaction]:
         tx = Transaction(
-            tx_id=f"{self.address}-{utc_now_iso()}",
-            origin=self.address,
-            destination=destination,
-            value=value,
-            timestamp=utc_now_iso(),
+            id=str(uuid.uuid4()), # Adaptado para gerar um UUID válido conforme especificado no PDF
+            origem=self.address,
+            destino=destination,
+            valor=value,
+            timestamp=current_timestamp(),
         )
         if not self.blockchain.add_transaction(tx):
             return False, "Transação inválida (valor <= 0 ou saldo insuficiente)."
