@@ -6,7 +6,7 @@ Testes de conformidade com o padrão Blockchain LSD 2025
 import json
 import struct
 from src.node import PeerMessage
-from src.models import Transaction, Block, utc_now_iso
+from src.models import Transaction, Block, current_timestamp
 
 
 def test_message_format():
@@ -15,31 +15,26 @@ def test_message_format():
     print("TESTE 1: Formato de Mensagem")
     print("=" * 60)
     
-    # Cria uma mensagem
     msg = PeerMessage(
         message_type="REQUEST_CHAIN",
         payload={},
         sender="127.0.0.1:5001"
     )
     
-    # Serializa
     serialized = msg.to_bytes()
     size_bytes = serialized[:4]
     json_bytes = serialized[4:]
     
-    # Valida tamanho big-endian
     size = struct.unpack(">I", size_bytes)[0]
     assert size == len(json_bytes), "Tamanho big-endian incorreto"
     print(f"✅ Tamanho big-endian correto: {size} bytes")
     
-    # Valida JSON UTF-8
     data = json.loads(json_bytes.decode("utf-8"))
     assert "type" in data, "Campo 'type' obrigatório ausente"
     assert "payload" in data, "Campo 'payload' obrigatório ausente"
     assert "sender" in data, "Campo 'sender' obrigatório ausente"
     print("✅ Estrutura JSON válida com campos obrigatórios")
     
-    # Desserializa
     msg2 = PeerMessage.from_bytes(json_bytes)
     assert msg2.message_type == msg.message_type
     assert msg2.payload == msg.payload
@@ -55,11 +50,11 @@ def test_transaction_payload():
     print("=" * 60)
     
     tx = Transaction(
-        tx_id="test-123",
-        origin="127.0.0.1:5001",
-        destination="127.0.0.1:5002",
-        value=10.5,
-        timestamp=utc_now_iso()
+        id="test-123",
+        origem="127.0.0.1:5001",
+        destino="127.0.0.1:5002",
+        valor=10.5,
+        timestamp=current_timestamp()
     )
     
     msg = PeerMessage(
@@ -74,8 +69,8 @@ def test_transaction_payload():
     assert msg2.message_type == "NEW_TRANSACTION"
     assert "transaction" in msg2.payload
     restored_tx = Transaction.from_dict(msg2.payload["transaction"])
-    assert restored_tx.tx_id == tx.tx_id
-    assert restored_tx.value == tx.value
+    assert restored_tx.id == tx.id
+    assert restored_tx.valor == tx.valor
     print("✅ Transação serializada/desserializada corretamente")
     print()
 
@@ -91,8 +86,8 @@ def test_block_payload():
         previous_hash="000abc123",
         transactions=[],
         nonce=42,
-        timestamp=utc_now_iso(),
-        block_hash="000def456"
+        timestamp=current_timestamp(),
+        hash="000def456"
     )
     
     msg = PeerMessage(
@@ -109,7 +104,7 @@ def test_block_payload():
     restored_block = Block.from_dict(msg2.payload["block"])
     assert restored_block.index == block.index
     assert restored_block.nonce == block.nonce
-    assert restored_block.block_hash == block.block_hash
+    assert restored_block.hash == block.hash
     print("✅ Bloco serializado/desserializado corretamente")
     print()
 
@@ -181,23 +176,22 @@ def test_encoding():
         message_type="NEW_TRANSACTION",
         payload={
             "transaction": {
-                "tx_id": "test-ã-ç-é",
-                "origin": "127.0.0.1:5001",
-                "destination": "127.0.0.1:5002",
-                "value": 1.0,
-                "timestamp": utc_now_iso()
+                "id": "test-ã-ç-é",
+                "origem": "127.0.0.1:5001",
+                "destino": "127.0.0.1:5002",
+                "valor": 1.0,
+                "timestamp": current_timestamp()
             }
         },
         sender="127.0.0.1:5001"
     )
     
     serialized = msg.to_bytes()
-    # Desserializa manualmente para garantir UTF-8
     size = struct.unpack(">I", serialized[:4])[0]
     text = serialized[4:4+size].decode("utf-8")
     data = json.loads(text)
     
-    assert data["payload"]["transaction"]["tx_id"] == "test-ã-ç-é"
+    assert data["payload"]["transaction"]["id"] == "test-ã-ç-é"
     print("✅ Caracteres especiais preservados em UTF-8")
     print()
 
