@@ -56,7 +56,8 @@ def interactive_loop(node: Node) -> None:
         if action == "mine":
             ok, result = node.mine()
             if ok:
-                print(f"Bloco minerado e propagado: índice={result.index}, hash={result.block_hash}")
+                # Alterado de result.block_hash para result.hash
+                print(f"Bloco minerado e propagado: índice={result.index}, hash={result.hash}")
             else:
                 print(result)
             continue
@@ -78,7 +79,8 @@ def interactive_loop(node: Node) -> None:
 
             ok, result = node.create_transaction(destination, value)
             if ok:
-                print(f"Transação enviada: {result.tx_id}")
+                # Alterado de result.tx_id para result.id
+                print(f"Transação enviada: {result.id}")
             else:
                 print(result)
             continue
