@@ -3,14 +3,14 @@ from __future__ import annotations
 from threading import RLock
 from typing import Iterable
 
-from .models import Block, Transaction, utc_now_iso
+from .models import Block, Transaction, current_timestamp
 
 
-GENESIS_TIMESTAMP = "2026-01-01T00:00:00+00:00"
+GENESIS_TIMESTAMP = 0
 GENESIS_NONCE = 0
 GENESIS_PREVIOUS_HASH = "0" * 64
 DIFFICULTY_PREFIX = "000"
-MINING_REWARD = 10.0
+MINING_REWARD = 50.0
 
 
 class Blockchain:
@@ -29,7 +29,7 @@ class Blockchain:
             nonce=GENESIS_NONCE,
             timestamp=GENESIS_TIMESTAMP,
         )
-        genesis.block_hash = genesis.compute_hash()
+        genesis.hash = genesis.compute_hash()
         return genesis
 
     @property
@@ -40,45 +40,45 @@ class Blockchain:
         balance = 0.0
         for block in self.chain:
             for tx in block.transactions:
-                if tx.origin == address:
-                    balance -= tx.value
-                if tx.destination == address:
-                    balance += tx.value
+                if tx.origem == address:
+                    balance -= tx.valor
+                if tx.destino == address:
+                    balance += tx.valor
 
         if include_pending:
             for tx in self.pending_transactions:
-                if tx.origin == address:
-                    balance -= tx.value
-                if tx.destination == address:
-                    balance += tx.value
+                if tx.origem == address:
+                    balance -= tx.valor
+                if tx.destino == address:
+                    balance += tx.valor
 
         return round(balance, 8)
 
     def can_apply_transaction(self, tx: Transaction) -> bool:
-        if tx.value <= 0:
+        if tx.valor <= 0:
             return False
-        if tx.origin == "SYSTEM":
+        if tx.origem == "coinbase":
             return True
-        projected_balance = self.get_balance(tx.origin, include_pending=True)
-        return projected_balance >= tx.value
+        projected_balance = self.get_balance(tx.origem, include_pending=True)
+        return projected_balance >= tx.valor
 
     def add_transaction(self, tx: Transaction) -> bool:
         with self.lock:
-            if tx.tx_id in self.known_transactions:
+            if tx.id in self.known_transactions:
                 return False
             if not self.can_apply_transaction(tx):
                 return False
             self.pending_transactions.append(tx)
-            self.known_transactions.add(tx.tx_id)
+            self.known_transactions.add(tx.id)
             return True
 
     def _prepare_block(self, transactions: list[Transaction]) -> Block:
         return Block(
             index=self.last_block.index + 1,
-            previous_hash=self.last_block.block_hash,
+            previous_hash=self.last_block.hash,
             transactions=transactions,
             nonce=0,
-            timestamp=utc_now_iso(),
+            timestamp=current_timestamp(),
         )
 
     def mine_pending_transactions(self) -> Block | None:
@@ -92,11 +92,11 @@ class Blockchain:
                 return None
 
             reward = Transaction(
-                tx_id=f"reward-{self.last_block.index + 1}-{self.node_address}",
-                origin="SYSTEM",
-                destination=self.node_address,
-                value=MINING_REWARD,
-                timestamp=utc_now_iso(),
+                id=f"reward-{self.last_block.index + 1}-{self.node_address}",
+                origem="coinbase",
+                destino=self.node_address,
+                valor=MINING_REWARD,
+                timestamp=current_timestamp(),
             )
             selected_transactions = [*valid_pool, reward]
             candidate = self._prepare_block(selected_transactions)
@@ -104,46 +104,46 @@ class Blockchain:
         while True:
             candidate_hash = candidate.compute_hash()
             if candidate_hash.startswith(DIFFICULTY_PREFIX):
-                candidate.block_hash = candidate_hash
+                candidate.hash = candidate_hash
                 break
             candidate.nonce += 1
 
         with self.lock:
-            if candidate.previous_hash != self.last_block.block_hash:
+            if candidate.previous_hash != self.last_block.hash:
                 return None
             self.chain.append(candidate)
-            included_ids = {tx.tx_id for tx in selected_transactions}
-            self.pending_transactions = [tx for tx in self.pending_transactions if tx.tx_id not in included_ids]
+            included_ids = {tx.id for tx in selected_transactions}
+            self.pending_transactions = [tx for tx in self.pending_transactions if tx.id not in included_ids]
             self.known_transactions.update(included_ids)
             return candidate
 
     def is_valid_block(self, block: Block, previous_block: Block) -> bool:
         if block.index != previous_block.index + 1:
             return False
-        if block.previous_hash != previous_block.block_hash:
+        if block.previous_hash != previous_block.hash:
             return False
         computed = block.compute_hash()
-        if block.block_hash != computed:
+        if block.hash != computed:
             return False
-        if not block.block_hash.startswith(DIFFICULTY_PREFIX):
+        if not block.hash.startswith(DIFFICULTY_PREFIX):
             return False
 
         snapshot_balances: dict[str, float] = {}
         reward_count = 0
         for tx in block.transactions:
-            if tx.value <= 0:
+            if tx.valor <= 0:
                 return False
-            if tx.origin == "SYSTEM":
+            if tx.origem == "coinbase":
                 reward_count += 1
-                if tx.value != MINING_REWARD:
+                if tx.valor != MINING_REWARD:
                     return False
                 continue
 
-            if tx.origin not in snapshot_balances:
-                snapshot_balances[tx.origin] = self.get_balance(tx.origin)
-            if snapshot_balances[tx.origin] < tx.value:
+            if tx.origem not in snapshot_balances:
+                snapshot_balances[tx.origem] = self.get_balance(tx.origem)
+            if snapshot_balances[tx.origem] < tx.valor:
                 return False
-            snapshot_balances[tx.origin] -= tx.value
+            snapshot_balances[tx.origem] -= tx.valor
 
         return reward_count <= 1
 
@@ -152,8 +152,8 @@ class Blockchain:
             if not self.is_valid_block(block, self.last_block):
                 return False
             self.chain.append(block)
-            included_ids = {tx.tx_id for tx in block.transactions}
-            self.pending_transactions = [tx for tx in self.pending_transactions if tx.tx_id not in included_ids]
+            included_ids = {tx.id for tx in block.transactions}
+            self.pending_transactions = [tx for tx in self.pending_transactions if tx.id not in included_ids]
             self.known_transactions.update(included_ids)
             return True
 
@@ -176,9 +176,9 @@ class Blockchain:
             if not self.validate_chain(new_chain):
                 return False
             self.chain = new_chain
-            existing_ids = {tx.tx_id for block in self.chain for tx in block.transactions}
+            existing_ids = {tx.id for block in self.chain for tx in block.transactions}
             self.known_transactions = set(existing_ids)
-            self.pending_transactions = [tx for tx in self.pending_transactions if tx.tx_id not in existing_ids]
+            self.pending_transactions = [tx for tx in self.pending_transactions if tx.id not in existing_ids]
             return True
 
     def chain_to_dict(self) -> list[dict]:
