@@ -15,42 +15,88 @@ Implementação de um sistema de **nó blockchain distribuído** sem servidor ce
 - `src/node.py` - rede P2P, protocolo e sincronização
 - `src/cli.py` - interface de linha de comando
 
-## Protocolo de Comunicação (JSON/TCP)
+## Protocolo de Comunicação (Padrão: Blockchain LSD 2025)
 
-Cada mensagem é um JSON em uma linha (`\n` no final):
+**Formato de Transmissão (TCP:**
+```
+[4 bytes: tamanho big-endian] [N bytes: JSON UTF-8]
+```
 
+**Estrutura das Mensagens:**
 ```json
 {
-  "type": "NEW_TRANSACTION | NEW_BLOCK | REQUEST_CHAIN | RESPONSE_CHAIN",
-  "data": { ... },
+  "type": "<TIPO>",
+  "payload": { ... },
   "sender": "host:porta"
 }
 ```
 
 ### 1) `NEW_TRANSACTION`
-Usada para propagar uma nova transação válida.
+Propaga uma nova transação válida.
 
-- `data` contém os campos da transação:
-  - `tx_id`, `origin`, `destination`, `value`, `timestamp`
+```json
+{
+  "type": "NEW_TRANSACTION",
+  "payload": {
+    "transaction": {
+      "tx_id": "...",
+      "origin": "...",
+      "destination": "...",
+      "value": 0.0,
+      "timestamp": "..."
+    }
+  },
+  "sender": "host:porta"
+}
+```
 
 ### 2) `NEW_BLOCK`
-Usada para propagar um bloco minerado.
+Propaga um bloco minerado.
 
-- `data` contém o bloco completo:
-  - `index`, `previous_hash`, `transactions`, `nonce`, `timestamp`, `block_hash`
+```json
+{
+  "type": "NEW_BLOCK",
+  "payload": {
+    "block": {
+      "index": 0,
+      "previous_hash": "...",
+      "transactions": [...],
+      "nonce": 0,
+      "timestamp": "...",
+      "block_hash": "..."
+    }
+  },
+  "sender": "host:porta"
+}
+```
 
 ### 3) `REQUEST_CHAIN`
-Usada para solicitar a blockchain completa de um nó remoto.
+Solicita a blockchain completa (sincronização).
 
-- `data`: `{}`
+```json
+{
+  "type": "REQUEST_CHAIN",
+  "payload": {},
+  "sender": "host:porta"
+}
+```
 
 ### 4) `RESPONSE_CHAIN`
-Resposta para sincronização de nós.
+Resposta com blockchain, transações pendentes e peers conhecidos.
 
-- `data` contém:
-  - `chain`: lista completa de blocos
-  - `pending_transactions`: lista de transações pendentes
-  - `peers`: lista de nós conhecidos
+```json
+{
+  "type": "RESPONSE_CHAIN",
+  "payload": {
+    "blockchain": {
+      "chain": [...],
+      "pending_transactions": [...],
+      "peers": ["host1:porta1", "host2:porta2"]
+    }
+  },
+  "sender": "host:porta"
+}
+```
 
 ## Regras implementadas
 

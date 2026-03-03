@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import socket
+import struct
 from threading import Thread
 from typing import Any
 
@@ -13,24 +14,28 @@ from .models import Block, Transaction, utc_now_iso
 @dataclass
 class PeerMessage:
     message_type: str
-    data: dict[str, Any]
+    payload: dict[str, Any]
     sender: str
 
-    def to_json(self) -> bytes:
-        payload = {
+    def to_bytes(self) -> bytes:
+        """Serializa para [4 bytes tamanho big-endian][JSON UTF-8]"""
+        message = {
             "type": self.message_type,
-            "data": self.data,
+            "payload": self.payload,
             "sender": self.sender,
         }
-        return (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
+        json_data = json.dumps(message, separators=(",", ":")).encode("utf-8")
+        size = struct.pack(">I", len(json_data))
+        return size + json_data
 
     @staticmethod
-    def from_json(raw: bytes) -> "PeerMessage":
-        payload = json.loads(raw.decode("utf-8"))
+    def from_bytes(raw: bytes) -> "PeerMessage":
+        """Desserializa de [4 bytes tamanho big-endian][JSON UTF-8]"""
+        message = json.loads(raw.decode("utf-8"))
         return PeerMessage(
-            message_type=str(payload["type"]),
-            data=dict(payload.get("data", {})),
-            sender=str(payload.get("sender", "unknown")),
+            message_type=str(message["type"]),
+            payload=dict(message.get("payload", {})),
+            sender=str(message.get("sender", "unknown")),
         )
 
 
@@ -80,36 +85,36 @@ class Node:
                 raw = self._recv_full_message(conn)
                 if not raw:
                     return
-                message = PeerMessage.from_json(raw)
+                message = PeerMessage.from_bytes(raw)
                 response = self._handle_message(message)
                 if response is not None:
-                    conn.sendall(response.to_json())
-            except (json.JSONDecodeError, KeyError, ValueError):
+                    conn.sendall(response.to_bytes())
+            except (json.JSONDecodeError, KeyError, ValueError, struct.error):
                 return
 
     def _recv_full_message(self, conn: socket.socket) -> bytes:
-        chunks = []
-        while True:
-            chunk = conn.recv(4096)
+        """Lê [4 bytes tamanho][JSON]"""
+        size_bytes = conn.recv(4)
+        if len(size_bytes) < 4:
+            return b""
+        size = struct.unpack(">I", size_bytes)[0]
+        data = b""
+        while len(data) < size:
+            chunk = conn.recv(min(4096, size - len(data)))
             if not chunk:
                 break
-            chunks.append(chunk)
-            if b"\n" in chunk:
-                break
-        payload = b"".join(chunks)
-        if b"\n" in payload:
-            payload = payload.split(b"\n", 1)[0]
-        return payload
+            data += chunk
+        return data
 
     def _send_message(self, peer: str, message: PeerMessage, expect_response: bool = False) -> PeerMessage | None:
         host, port_raw = peer.split(":")
         with socket.create_connection((host, int(port_raw)), timeout=3) as conn:
-            conn.sendall(message.to_json())
+            conn.sendall(message.to_bytes())
             if expect_response:
                 raw = self._recv_full_message(conn)
                 if not raw:
                     return None
-                return PeerMessage.from_json(raw)
+                return PeerMessage.from_bytes(raw)
         return None
 
     def _broadcast(self, message: PeerMessage) -> None:
@@ -128,26 +133,26 @@ class Node:
             self.peers.add(message.sender)
 
         if message.message_type == "NEW_TRANSACTION":
-            tx = Transaction.from_dict(message.data)
+            tx = Transaction.from_dict(message.payload.get("transaction", {}))
             accepted = self.blockchain.add_transaction(tx)
             if accepted:
                 self._broadcast(
                     PeerMessage(
                         message_type="NEW_TRANSACTION",
-                        data=tx.to_dict(),
+                        payload={"transaction": tx.to_dict()},
                         sender=self.address,
                     )
                 )
             return None
 
         if message.message_type == "NEW_BLOCK":
-            block = Block.from_dict(message.data)
+            block = Block.from_dict(message.payload.get("block", {}))
             accepted = self.blockchain.add_block(block)
             if accepted:
                 self._broadcast(
                     PeerMessage(
                         message_type="NEW_BLOCK",
-                        data=block.to_dict(),
+                        payload={"block": block.to_dict()},
                         sender=self.address,
                     )
                 )
@@ -157,11 +162,13 @@ class Node:
 
         if message.message_type == "REQUEST_CHAIN":
             payload = {
-                "chain": self.blockchain.chain_to_dict(),
-                "pending_transactions": self.blockchain.pending_to_dict(),
-                "peers": sorted(self.peers | {self.address}),
+                "blockchain": {
+                    "chain": self.blockchain.chain_to_dict(),
+                    "pending_transactions": self.blockchain.pending_to_dict(),
+                    "peers": sorted(self.peers | {self.address}),
+                }
             }
-            return PeerMessage(message_type="RESPONSE_CHAIN", data=payload, sender=self.address)
+            return PeerMessage(message_type="RESPONSE_CHAIN", payload=payload, sender=self.address)
 
         if message.message_type == "RESPONSE_CHAIN":
             return None
@@ -172,14 +179,15 @@ class Node:
         best_chain: list[Block] | None = None
         collected_peers: set[str] = set()
 
-        request = PeerMessage(message_type="REQUEST_CHAIN", data={}, sender=self.address)
+        request = PeerMessage(message_type="REQUEST_CHAIN", payload={}, sender=self.address)
         for peer in list(self.peers):
             try:
                 response = self._send_message(peer, request, expect_response=True)
                 if not response or response.message_type != "RESPONSE_CHAIN":
                     continue
-                remote_chain = [Block.from_dict(raw) for raw in response.data.get("chain", [])]
-                remote_peers = set(response.data.get("peers", []))
+                bc_data = response.payload.get("blockchain", {})
+                remote_chain = [Block.from_dict(raw) for raw in bc_data.get("chain", [])]
+                remote_peers = set(bc_data.get("peers", []))
                 collected_peers.update(remote_peers)
 
                 if not remote_chain:
@@ -207,7 +215,7 @@ class Node:
         if not self.blockchain.add_transaction(tx):
             return False, "Transação inválida (valor <= 0 ou saldo insuficiente)."
 
-        self._broadcast(PeerMessage(message_type="NEW_TRANSACTION", data=tx.to_dict(), sender=self.address))
+        self._broadcast(PeerMessage(message_type="NEW_TRANSACTION", payload={"transaction": tx.to_dict()}, sender=self.address))
         return True, tx
 
     def mine(self) -> tuple[bool, str | Block]:
@@ -215,7 +223,7 @@ class Node:
         if block is None:
             return False, "Nenhuma transação pendente para minerar ou cadeia mudou durante a mineração."
 
-        self._broadcast(PeerMessage(message_type="NEW_BLOCK", data=block.to_dict(), sender=self.address))
+        self._broadcast(PeerMessage(message_type="NEW_BLOCK", payload={"block": block.to_dict()}, sender=self.address))
         return True, block
 
     def list_peers(self) -> list[str]:
