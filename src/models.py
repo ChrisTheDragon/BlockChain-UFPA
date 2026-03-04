@@ -1,23 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
 import hashlib
 import json
+import time
 from typing import Any
 
 
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def current_timestamp() -> float:
+    return time.time()
 
 
 @dataclass(frozen=True)
 class Transaction:
-    tx_id: str
-    origin: str
-    destination: str
-    value: float
-    timestamp: str
+    id: str
+    origem: str
+    destino: str
+    valor: float
+    timestamp: float
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -25,11 +25,11 @@ class Transaction:
     @staticmethod
     def from_dict(data: dict[str, Any]) -> "Transaction":
         return Transaction(
-            tx_id=str(data["tx_id"]),
-            origin=str(data["origin"]),
-            destination=str(data["destination"]),
-            value=float(data["value"]),
-            timestamp=str(data["timestamp"]),
+            id=str(data["id"]),
+            origem=str(data["origem"]),
+            destino=str(data["destino"]),
+            valor=float(data["valor"]),
+            timestamp=float(data["timestamp"]),
         )
 
 
@@ -39,8 +39,8 @@ class Block:
     previous_hash: str
     transactions: list[Transaction]
     nonce: int
-    timestamp: str
-    block_hash: str = ""
+    timestamp: float
+    hash: str = ""
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -52,12 +52,13 @@ class Block:
         }
 
     def compute_hash(self) -> str:
-        encoded = json.dumps(self.payload(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        # A remoção dos separators garante o espaçamento padrão do Python exigido para bater o hash Gênesis
+        encoded = json.dumps(self.payload(), sort_keys=True).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
     def to_dict(self) -> dict[str, Any]:
         data = self.payload()
-        data["block_hash"] = self.block_hash
+        data["hash"] = self.hash
         return data
 
     @staticmethod
@@ -68,6 +69,6 @@ class Block:
             previous_hash=str(data["previous_hash"]),
             transactions=transactions,
             nonce=int(data["nonce"]),
-            timestamp=str(data["timestamp"]),
-            block_hash=str(data.get("block_hash", "")),
+            timestamp=float(data["timestamp"]),
+            hash=str(data.get("hash", "")),
         )
