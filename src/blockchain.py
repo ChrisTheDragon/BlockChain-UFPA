@@ -83,14 +83,14 @@ class Blockchain:
 
     def mine_pending_transactions(self) -> Block | None:
         with self.lock:
-            if not self.pending_transactions:
-                return None
+            # Sempre permitir minerar, mesmo sem transações pendentes
+            valid_pool = []
+            if self.pending_transactions:
+                valid_pool = [tx for tx in self.pending_transactions if self.can_apply_transaction(tx)]
+                if not valid_pool:
+                    self.pending_transactions.clear()
 
-            valid_pool = [tx for tx in self.pending_transactions if self.can_apply_transaction(tx)]
-            if not valid_pool:
-                self.pending_transactions.clear()
-                return None
-
+            # Criar transação de recompensa (coinbase)
             reward = Transaction(
                 id=f"reward-{self.last_block.index + 1}-{self.node_address}",
                 origem="coinbase",
