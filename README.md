@@ -1,5 +1,12 @@
 # Blockchain UFPA - Nó P2P em Python
 
+## Alunos
+
+- CHRISTIAN DE JESUS DA COSTA MARINHO - 202004940041 - christiandejesus23@gmail.com 
+- GABRIEL RIBEIRO DE ALCANTARA - 202004940012 - gabriel.alcantara@icen.ufpa.br 
+- JOAO PAULO OLIVEIRA DE BARROS - 202104940023 - joaooliveiraufpa@gmail.com 
+- RAMON NEIRAO MENDES - 202104940013 - ramon.mendes@icen.ufpa.br 
+
 Implementação de um sistema de **nó blockchain distribuído** sem servidor central, com:
 
 - transações validadas;
@@ -39,11 +46,11 @@ Propaga uma nova transação válida.
   "type": "NEW_TRANSACTION",
   "payload": {
     "transaction": {
-      "tx_id": "...",
-      "origin": "...",
-      "destination": "...",
-      "value": 0.0,
-      "timestamp": "..."
+      "id": "...",
+      "origem": "...",
+      "destino": "...",
+      "valor": 0.0,
+      "timestamp": 0.0
     }
   },
   "sender": "host:porta"
@@ -62,8 +69,8 @@ Propaga um bloco minerado.
       "previous_hash": "...",
       "transactions": [...],
       "nonce": 0,
-      "timestamp": "...",
-      "block_hash": "..."
+      "timestamp": 0.0,
+      "hash": "..."
     }
   },
   "sender": "host:porta"
@@ -101,14 +108,14 @@ Resposta com blockchain, transações pendentes e peers conhecidos.
 ## Regras implementadas
 
 ### Transações
-- valor deve ser positivo (`value > 0`)
+- valor deve ser positivo (`valor > 0`)
 - não permite saldo negativo
-- cada transação tem id único (`tx_id`) e timestamp
+- cada transação tem id único (`id`) e timestamp
 
 ### Blocos
 - contém índice, hash anterior, transações, nonce, timestamp e hash atual
 - hash com SHA-256
-- bloco só é válido se `block_hash` inicia com `000`
+- bloco só é válido se `hash` inicia com `000`
 
 ### Blockchain
 - bloco gênesis fixo
